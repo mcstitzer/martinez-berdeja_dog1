@@ -2,6 +2,7 @@
 Scripts to reconstruct DOG1 haplotypes and understand their evolution for Martinez-Berdeja et al., 2019
 
 - `dog1_history.Rmd` generates Figure 3, with the gene tree of DOG1 and pairwise divergence of haplotype groups plotted on a temperature record of the Pleistocene.
+  - `dog1_history.md` shows code as executed.
 
 - `haplotypes` contains scripts to 
   - download short reads, map, and reassemble exon 1 of DOG1
