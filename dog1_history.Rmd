@@ -1,8 +1,9 @@
 ---
 title: "Population Genetic and Phylogenetic History of DOG1"
-output:
-  html_document: default
-  html_notebook: default
+#output:
+#  html_document: default
+#  html_notebook: default
+output: rmarkdown::github_document
 ---
 
 
