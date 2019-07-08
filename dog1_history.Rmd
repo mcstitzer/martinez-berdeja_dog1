@@ -1,0 +1,547 @@
+---
+title: "Population Genetic and Phylogenetic History of DOG1"
+output: html_notebook
+---
+
+
+
+DOG1 contains variants unassayed in the 1001 genomes VCF. We reassembled exon 1 of DOG1 using short reads. We assigned haplotype groups as in Nakabayashi et al., 2015, using the three to four amino acids of the self binding domain, at positions 13-16 of exon 1. 
+
+
+## First, load some packages
+```{r, include=FALSE}
+library(pegas)
+library(plyr)
+library(ape)
+library(cowplot)
+library(ggtree)
+library(treeio)
+library(phangorn)
+library(stringr)
+library(phytools)
+library(data.table)
+library(gridGraphics)
+
+```
+
+
+# Population Genetic Estimates of Age
+
+We calculated pairwise diversity (pi) within haplotype groups, and between haplotype groups. 
+
+Although this is a crude approximation of time, we don't have to make assumptions about demography and selection (effectively ignoring them). Notably, this gives us information on the order of a few Ne generations.
+
+## read in the exon 1 fasta, and the haplotype assignment.
+```{r}
+aln=read.FASTA('~/Documents/berdeja_dog1/phylogeny/revbayes_e1dog1.nogaps.fa')
+
+haplo=read.table('~/Documents/berdeja_dog1/haplotypes/dog1.may22.translated.phy', stringsAsFactors = F)
+haplo$hap=substr(haplo$V2, 13,16)
+haplo$hap=haplo$V2
+
+```
+
+## set mu and its CI based on Ossowski et al 2010 
+
+Variablemut is the mutation rate for the region of the chromosome DOG1 is found on.
+```{r}
+mu=7.1e-9
+mu.ci=c(6.3e-9,7.9e-9)
+variablemut=9e-9
+```
+
+## calculate pi within for each group
+```{r}
+dsy=nuc.div(aln[names(aln) %in% haplo$V1[haplo$hap=='D-SY']], pairwise.deletion=T)/2/c(mu, mu.ci,variablemut)
+dry=nuc.div(aln[names(aln) %in% haplo$V1[haplo$hap=='D-RY']], pairwise.deletion=T)/2/c(mu, mu.ci,variablemut)
+ds=nuc.div(aln[names(aln) %in% haplo$V1[haplo$hap%in%c('D-SY', 'D-RY')]], pairwise.deletion=T)/2/c(mu, mu.ci,variablemut)
+
+## note these are not monophyletic, perhaps all samples is a better value??
+es=nuc.div(aln[names(aln) %in% haplo$V1[haplo$hap%in%c('ECCY', 'ECSY', 'EFSY')]], pairwise.deletion=T)/2/c(mu, mu.ci,variablemut)
+
+ecsy=nuc.div(aln[names(aln) %in% haplo$V1[haplo$hap%in%c('ECSY')]], pairwise.deletion=T)/2/c(mu, mu.ci,variablemut)
+efsy=nuc.div(aln[names(aln) %in% haplo$V1[haplo$hap%in%c('EFSY')]], pairwise.deletion=T)/2/c(mu, mu.ci,variablemut)
+
+
+```
+
+## make a data frame for easy use, with each haplotype divergence in it
+```{r}
+times=data.frame(DRY=dry, DSY=dsy, allD=ds, allE=es, ECSY=ecsy, EFSY=efsy)
+times=data.frame(t(times))
+colnames(times)=c('mu', 'mu.low', 'mu.high', 'mu.variable')
+times$haplo=rownames(times)
+
+### for posterity, write to file
+#write.table(times, '~/Downloads/dog1_haplotype_divergence_times_pi.txt', col.names=T, row.names=F, sep='\t', quote=F)
+#times=read.table('~/Downloads/dog1_haplotype_divergence_times_pi.txt', header=T)
+
+```
+
+## Times then has the estimated timing of origin of these groups
+```{r}
+times
+```
+
+
+# Now, we want to compare these times to geological events
+
+From NOAA, download EPICA Dome C [800KYr Deuterium Data and Temperature Estimates](https://www1.ncdc.noaa.gov/pub/data/paleo/icecore/antarctica/epica_domec/edc3deuttemp2007.txt).
+
+[ORIGINAL REFERENCE](https://science.sciencemag.org/content/317/5839/793.long):
+Jouzel, J., V. Masson-Delmotte, O. Cattani, G. Dreyfus, S. Falourd, 
+G. Hoffmann, B. Minster, J. Nouet, J.M. Barnola, J. Chappellaz, H. Fischer,
+J.C. Gallet, S. Johnsen, M. Leuenberger, L. Loulergue, D. Luethi, H. Oerter,
+F. Parrenin, G. Raisbeck, D. Raynaud, A. Schilt, J. Schwander, E. Selmo, 
+R. Souchez, R. Spahni, B. Stauffer, J.P. Steffensen, B. Stenni, T.F. Stocker, 
+J.L. Tison, M. Werner, and E.W. Wolff.  2007.
+Orbital and Millennial Antarctic Climate Variability over the Past 800,000 Years.
+Science, Vol. 317, No. 5839, pp.793-797, 10 August 2007.
+
+
+*DATA:*
+
+EPICA Dome C bag deuterium data 
+(LSCE, analytical accuracy of 0.5 per mille)
+
+Temperature estimated after correction for sea-water isotopic composition (Bintanja et al, 2005)
+and for ice sheet elevation (Parrenin et al, 2007) 
+on EDC3 age scale (Parrenin et al, 2007)
+
+- Column 1: Bag number (55 cm sample)
+- Column 2: Top depth (m)
+- Column 3: EDC3 age scale (years before year 1950)
+- Column 4: dD data (per mille with respect to SMOW)
+- Column 5: Temperature estimate (temperature difference from the average of the last 1000 years)
+
+```{r}
+a=read.table('/Users/mcstitzer/Downloads/706973086_2019-05-09/data/pub/data/paleo/icecore/antarctica/epica_domec/edc3deuttemp2007.data.txt', fill=T, header=T)
+
+a$kya=a$Age/1000
+tail(a, 10)
+```
+
+
+### what have the last 500k years looked like?
+```{r}
+ggplot(a, aes(x=Age, y=Temperature))+ geom_hline(yintercept=0, lty='dashed', color='lightgray') + geom_line(color='gray') + xlim(500000,0) + ylab(expression(Delta*'Temperature (from last 1000 year average)')) + xlab('Age (years ago)') 
+```
+
+## now we can add on ages of dog1 events here
+
+```{r}
+### purple and green colors
+hapcolors=c('#762a83', '#762a83','#762a83', 
+            '#9970ab', '#9970ab',
+            '#a6dba0', 
+            '#5aae61', 
+            '#1b7837',
+            '#cc8899',
+            '#66ff00')
+names(hapcolors)=c('D-RY', 'DRY','DR-Y', 
+                   'D-SY','DSY', 
+                   'ECCY', 
+                   'ECSY', 
+                   'EFSY',
+                   'allD',
+                   'allE')
+
+temperature=ggplot(a, aes(x=Age, y=Temperature))+ geom_hline(yintercept=0, lty='dashed', color='lightgray') + geom_line(color='gray') + xlim(500000,0) + ylab(expression(Delta*'Temperature ('*degree*'C)')) + xlab('Age (years ago)') + ylim(-10,10) + geom_errorbarh(data=times[times$haplo != c('ECSY', 'EFSY'),], aes(x=mu, y=8, xmax = mu.high, xmin = mu.low, color=haplo), inherit.aes = F) + geom_point(data = times[times$haplo != c('ECSY', 'EFSY'),], aes(x=mu, y=8, color=haplo), size=3, inherit.aes = F) + scale_color_manual(values=hapcolors) + labs(color='Haplotype')
+
+## Add to figure legend:  from last 1000 year average
+
+temperature
+
+## also try with ecsy and efsy. 
+temperature.alle=ggplot(a, aes(x=kya, y=Temperature))+ geom_hline(yintercept=0, lty='dashed', color='lightgray') + geom_line(color='gray') + xlim(500,0) + ylab(expression(Delta*'Temperature ('*degree*'C)')) + xlab('Age (thousand years ago)') + ylim(-10,10) + geom_errorbarh(data=times, aes(x=mu/1000, y=8, xmax = mu.high/1000, xmin = mu.low/1000, color=haplo), inherit.aes = F) + geom_point(data = times, aes(x=mu/1000, y=8, color=haplo), size=2, inherit.aes = F) + scale_color_manual(values=hapcolors) + labs(color='Haplotype') 
+#+ scale_x_continuous(breaks=c(5e5,4e5,3e5,2e5,1e5,0),
+#        labels=c(500,400,300,200,100,0))
+
+```
+
+
+## Now add in phylogeny
+
+## i overwrote the native phytools function of the same name with this - not sure if i need this!
+```{r}
+getDescendants<-function(tree,node,curr=NULL){
+  if(is.null(curr)) curr<-vector()
+  daughters<-tree$edge[which(tree$edge[,1]==node),2]
+  curr<-c(curr,daughters)
+  w<-which(daughters>=length(tree$tip))
+  if(length(w)>0) for(i in 1:length(w)) 
+    curr<-getDescendants(tree,daughters[w[i]],curr)
+  return(curr)
+}
+```
+
+## heres a try coloring branchesk not working!
+```{r, eval=FALSE, include=FALSE}
+## plot backbone phylogeny with triangles
+plot.backbonePhylo_color<-function(x,...){
+	if(!inherits(x,"backbonePhylo")) 
+		stop("x not an object of class \"backbonePhylo\"")
+	if(hasArg(vscale)) vscale<-list(...)$vscale
+	else vscale<-1
+	if(hasArg(Y)) Y<-list(...)$Y
+	if(hasArg(col)) col<-list(...)$col 
+	else col<-"grey"
+	if(length(col)!=Ntip(x)){ 
+		if(!is.null(names(col))){ 
+		    brcolors<-col ## this is to preserve col to use when plotting branches
+			tmp<-setNames(rep("grey",Ntip(x)),sapply(x$tip.clade,function(x) x$label))
+			for(i in 1:length(col)) tmp[which(names(tmp)==names(col)[i])]<-col[i]
+			col<-tmp
+		} else col<-setNames(rep(col[1],Ntip(x)),sapply(x$tip.clade,
+			function(x) x$label))
+	}
+	if(is.null(names(col))) names(col)<-sapply(x$tip.clade,
+		function(x) x$label)
+	col<-col[sapply(x$tip.clade,function(x) x$label)]
+	names(col)<-sapply(x$tip.clade,function(x) x$id)
+	if(hasArg(lwd)) lwd<-list(...)$lwd
+	else lwd<-2
+	if(hasArg(sep)) sep<-list(...)$sep
+	else sep<-1
+	if(hasArg(fixed.height)) fixed.height<-list(...)$fixed.height
+	else fixed.height<-FALSE
+	if(hasArg(print.clade.size)) 
+		print.clade.size<-list(...)$print.clade.size
+	else print.clade.size<-FALSE
+	if(hasArg(fixed.n1)) fixed.n1<-list(...)$fixed.n1
+	else fixed.n1<-FALSE
+	if(hasArg(xlim)) xlim<-list(...)$xlim
+	else xlim<-NULL
+	if(hasArg(ylim)) ylim<-list(...)$ylim
+	else ylim<-NULL
+	if(fixed.height||print.clade.size){
+		obj<-x
+		for(i in 1:Ntip(obj)){
+			if(print.clade.size){
+					obj$tip.clade[[i]]$label<-if(x$tip.clade[[i]]$N>1||fixed.n1)
+						paste(x$tip.clade[[i]]$label," (n=",
+						x$tip.clade[[i]]$N,")",sep="")
+						else x$tip.clade[[i]]$label
+					ii<-which(names(col)==x$tip.clade[[i]]$label)
+					names(col)[ii]<-obj$tip.clade[[i]]$label
+			}
+			if(fixed.height)
+				obj$tip.clade[[i]]$N<-if(x$tip.clade[[i]]$N>1||fixed.n1) 
+					sum(sapply(x$tip.clade,function(y) y$N))/Ntip(x)
+					else 1
+		}
+		x<-obj
+	}
+	x<-scaleN(x,vscale)
+	tt<-backbone.toPhylo(x)
+	n<-sum(sapply(x$tip.clade,function(x) x$N))
+	cw<-reorder.backbonePhylo(x,"cladewise")
+	y<-vector(length=length(cw$tip.clade)+cw$Nnode)
+	ii<-order(cw$edge[,2][cw$edge[,2]<=Ntip(cw)])
+	z<-c(0,cumsum(sapply(cw$tip.clade[order(ii)],function(x) x$N)))
+	nn<-sapply(2:length(z),function(i,x) (x[i]-x[i-1])/2+x[i-1],x=z)
+	y[cw$edge[cw$edge[,2]<=length(cw$tip.clade),2]]<-nn[1:length(cw$tip.clade)]
+	pw<-reorder.backbonePhylo(x,"pruningwise")
+	nn<-unique(pw$edge[,1])
+	for(i in 1:length(nn)){
+		yy<-y[pw$edge[which(pw$edge[,1]==nn[i]),2]]
+		y[nn[i]]<-mean(range(yy))
+	}
+	# compute start & end points of each edge
+	X<-nodeHeights(tt)
+	
+	
+	eep<-setNames(sapply(1:n,function(x,y)   which(y==x),y=tt$edge[,2]),sapply(tt$tip.clade, function(y) y$label))
+	
+	dsyMRCA<-findMRCA(tt, which(sapply(tt$tip.clade, function(y) y$label)=='D-SY'))
+    dryMRCA<-findMRCA(tt, which(sapply(tt$tip.clade, function(y) y$label) %in% c('DR-Y', 'D-RY')))
+    efsyMRCA<-findMRCA(tt, which(sapply(tt$tip.clade, function(y) y$label) %in% c('EFSY')))
+    ecsyMRCA<-findMRCA(tt, which(sapply(tt$tip.clade, function(y) y$label) %in% c('ECSY')))
+    
+	Y<-rep(brcolors['ECCY'], tt$Nnode+length(tt$tip.clade))
+	Y[1:length(tt$tip.clade)]<- sapply(brcolors[names(eep)][1:length(tt$tip.clade)], function(x) ifelse(is.na(x), brcolors['ECCY'], x)) ## default to eccy as 'ancestral'
+	Y[getDescendants(tt, dsyMRCA)]<-brcolors['D-SY']
+	Y[getDescendants(tt, dryMRCA)]<-brcolors['D-RY']
+	Y[getDescendants(tt, ecsyMRCA)]<-brcolors['ECSY']
+	Y[getDescendants(tt, efsyMRCA)]<-brcolors['EFSY']
+	print(length(Y))
+#	Y[1:n,3]=brcolors[names(eep)]
+#	Y[,3][is.na(Y[,3])]='black'
+	print(Y)
+	
+	
+	
+	# open & size a new plot
+	plot.new()
+	par(mar=rep(0.1,4))
+	pp<-par("pin")[1]
+	sw<-par("cex")*(max(strwidth(sapply(cw$tip.clade,function(x) x$label),
+		units="inches")))+1.37*par("cex")*strwidth("W",units="inches")
+	alp<-optimize(function(a,H,sw,pp) (a*1.04*max(H)+sw-pp)^2,H=X,sw=sw,pp=pp,
+		interval=c(0,1e6))$minimum
+	if(is.null(xlim)) xlim<-c(min(X),max(X)+sw/alp)
+	if(is.null(ylim)) ylim<-c(0,n)
+	plot.window(xlim=xlim,ylim=ylim)
+	# plot horizontal edges
+	for(i in 1:nrow(X)){
+	    #print(Y[i])
+		if(cw$edge[i,2]>length(cw$tip.clade)) lines(X[i,],rep(y[cw$edge[i,2]],2),
+			lwd=lwd,lend=2, col=Y[i])
+		else lines(c(X[i,1],X[i,2]-cw$tip.clade[[cw$edge[i,2]]]$depth),
+			rep(y[cw$edge[i,2]],2),lwd=lwd,lend=2, col=Y[i])
+	}
+	# plot vertical relationships
+	for(i in 1:x$Nnode+length(x$tip.clade)) lines(X[which(cw$edge[,1]==i),1],
+		range(y[cw$edge[which(cw$edge[,1]==i),2]]),lwd=lwd,lend=2, col=Y[i]) ## mcs new
+	for(i in 1:length(x$tip.clade)){
+		if(x$tip.clade[[i]]$N==1){
+			tmp<-sep
+			sep<-1
+		} else tmp<-sep
+		xx<-c(X[which(cw$edge[,2]==i),2]-cw$tip.clade[[i]]$depth,
+			X[which(cw$edge[,2]==i),2],X[which(cw$edge[,2]==i),2])
+		yy<-c(y[cw$edge[which(cw$edge[,2]==i),2]],
+			y[cw$edge[which(cw$edge[,2]==i),2]]+cw$tip.clade[[i]]$N/2-
+			sep/2,y[cw$edge[which(cw$edge[,2]==i),2]]-
+			cw$tip.clade[[i]]$N/2+sep/2)
+		if(yy[2]<yy[3]) yy[2]<-yy[3]<-yy[1]
+		polygon(x=xx,y=yy,col=col[cw$tip.clade[[i]]$id],border=col[cw$tip.clade[[i]]$id],lwd=lwd)
+		sep<-tmp
+	}
+#	for(i in 1:length(cw$tip.clade)) 
+#		text(X[which(cw$edge[,2]==i),2],y[i],cw$tip.clade[[i]]$label,pos=4,
+#			offset=0.1)
+	PP<-list(type="phylogram",use.edge.length=TRUE,node.pos=1,
+		show.tip.label=TRUE,show.node.label=FALSE,
+		font=1,cex=1,adj=0,srt=0,no.margin=FALSE,label.offset=0.1,
+		x.lim=par()$usr[1:2],y.lim=par()$usr[3:4],
+		direction="rightwards",tip.color="black",Ntip=Ntip(cw),Nnode=cw$Nnode,
+		edge=cw$edge,xx=sapply(1:(Ntip(cw)+cw$Nnode),
+		function(x,y,z) y[match(x,z)],y=X,z=cw$edge),yy=y)
+	assign("last_plot.phylo",PP,envir=.PlotPhyloEnv)
+}
+```
+
+
+## this is a phytools function I modified to plot branches in color
+```{r, include=FALSE}
+## plot backbone phylogeny with triangles
+plot.backbonePhylo_color<-function(x,...){
+	if(!inherits(x,"backbonePhylo")) 
+		stop("x not an object of class \"backbonePhylo\"")
+	if(hasArg(vscale)) vscale<-list(...)$vscale
+	else vscale<-1
+	if(hasArg(Y)) Y<-list(...)$Y
+	if(hasArg(col)) col<-list(...)$col 
+	else col<-"grey"
+	if(length(col)!=Ntip(x)){ 
+		if(!is.null(names(col))){ 
+		    brcolors<-col ## this is to preserve col to use when plotting branches
+			tmp<-setNames(rep("grey",Ntip(x)),sapply(x$tip.clade,function(x) x$label))
+			for(i in 1:length(col)) tmp[which(names(tmp)==names(col)[i])]<-col[i]
+			col<-tmp
+		} else col<-setNames(rep(col[1],Ntip(x)),sapply(x$tip.clade,
+			function(x) x$label))
+	}
+	if(is.null(names(col))) names(col)<-sapply(x$tip.clade,
+		function(x) x$label)
+	col<-col[sapply(x$tip.clade,function(x) x$label)]
+	names(col)<-sapply(x$tip.clade,function(x) x$id)
+	if(hasArg(lwd)) lwd<-list(...)$lwd
+	else lwd<-2
+	if(hasArg(sep)) sep<-list(...)$sep
+	else sep<-1
+	if(hasArg(fixed.height)) fixed.height<-list(...)$fixed.height
+	else fixed.height<-FALSE
+	if(hasArg(print.clade.size)) 
+		print.clade.size<-list(...)$print.clade.size
+	else print.clade.size<-FALSE
+	if(hasArg(fixed.n1)) fixed.n1<-list(...)$fixed.n1
+	else fixed.n1<-FALSE
+	if(hasArg(xlim)) xlim<-list(...)$xlim
+	else xlim<-NULL
+	if(hasArg(ylim)) ylim<-list(...)$ylim
+	else ylim<-NULL
+	if(fixed.height||print.clade.size){
+		obj<-x
+		for(i in 1:Ntip(obj)){
+			if(print.clade.size){
+					obj$tip.clade[[i]]$label<-if(x$tip.clade[[i]]$N>1||fixed.n1)
+						paste(x$tip.clade[[i]]$label," (n=",
+						x$tip.clade[[i]]$N,")",sep="")
+						else x$tip.clade[[i]]$label
+					ii<-which(names(col)==x$tip.clade[[i]]$label)
+					names(col)[ii]<-obj$tip.clade[[i]]$label
+			}
+			if(fixed.height)
+				obj$tip.clade[[i]]$N<-if(x$tip.clade[[i]]$N>1||fixed.n1) 
+					sum(sapply(x$tip.clade,function(y) y$N))/Ntip(x)
+					else 1
+		}
+		x<-obj
+	}
+	x<-scaleN(x,vscale)
+	tt<-backbone.toPhylo(x)
+	n<-sum(sapply(x$tip.clade,function(x) x$N))
+	cw<-reorder.backbonePhylo(x,"cladewise")
+	y<-vector(length=length(cw$tip.clade)+cw$Nnode)
+	ii<-order(cw$edge[,2][cw$edge[,2]<=Ntip(cw)])
+	z<-c(0,cumsum(sapply(cw$tip.clade[order(ii)],function(x) x$N)))
+	nn<-sapply(2:length(z),function(i,x) (x[i]-x[i-1])/2+x[i-1],x=z)
+	y[cw$edge[cw$edge[,2]<=length(cw$tip.clade),2]]<-nn[1:length(cw$tip.clade)]
+	pw<-reorder.backbonePhylo(x,"pruningwise")
+	nn<-unique(pw$edge[,1])
+	for(i in 1:length(nn)){
+		yy<-y[pw$edge[which(pw$edge[,1]==nn[i]),2]]
+		y[nn[i]]<-mean(range(yy))
+	}
+	# compute start & end points of each edge
+	X<-nodeHeights(tt)
+	
+	
+	eep<-setNames(sapply(1:n,function(x,y)   which(y==x),y=tt$edge[,2]),sapply(tt$tip.clade, function(y) y$label))
+    
+	Y<- sapply(brcolors[names(eep)], function(x) ifelse(is.na(x), 'gray', x)) ## default to eccy as 'ancestral'
+	print(length(Y))
+#	Y[1:n,3]=brcolors[names(eep)]
+#	Y[,3][is.na(Y[,3])]='black'
+#	print(Y)
+	
+	
+	
+	# open & size a new plot
+	plot.new()
+	par(mar=rep(0.1,4))
+	pp<-par("pin")[1]
+	sw<-par("cex")*(max(strwidth(sapply(cw$tip.clade,function(x) x$label),
+		units="inches")))+1.37*par("cex")*strwidth("W",units="inches")
+	alp<-optimize(function(a,H,sw,pp) (a*1.04*max(H)+sw-pp)^2,H=X,sw=sw,pp=pp,
+		interval=c(0,1e6))$minimum
+	if(is.null(xlim)) xlim<-c(min(X),max(X)+sw/alp)
+	if(is.null(ylim)) ylim<-c(0,n)
+	plot.window(xlim=xlim,ylim=ylim)
+	# plot horizontal edges
+	for(i in 1:nrow(X)){
+	    #print(Y[i])
+		if(cw$edge[i,2]>length(cw$tip.clade)) lines(X[i,],rep(y[cw$edge[i,2]],2),
+			lwd=lwd,lend=2, col=Y[i])
+		else lines(c(X[i,1],X[i,2]-cw$tip.clade[[cw$edge[i,2]]]$depth),
+			rep(y[cw$edge[i,2]],2),lwd=lwd,lend=2, col=Y[i])
+	}
+	# plot vertical relationships
+	for(i in 1:x$Nnode+length(x$tip.clade)) lines(X[which(cw$edge[,1]==i),1],
+		range(y[cw$edge[which(cw$edge[,1]==i),2]]),lwd=lwd,lend=2, col=Y[i]) ## mcs new
+	for(i in 1:length(x$tip.clade)){
+		if(x$tip.clade[[i]]$N==1){
+			tmp<-sep
+			sep<-1
+		} else tmp<-sep
+		xx<-c(X[which(cw$edge[,2]==i),2]-cw$tip.clade[[i]]$depth,
+			X[which(cw$edge[,2]==i),2],X[which(cw$edge[,2]==i),2])
+		yy<-c(y[cw$edge[which(cw$edge[,2]==i),2]],
+			y[cw$edge[which(cw$edge[,2]==i),2]]+cw$tip.clade[[i]]$N/2-
+			sep/2,y[cw$edge[which(cw$edge[,2]==i),2]]-
+			cw$tip.clade[[i]]$N/2+sep/2)
+		if(yy[2]<yy[3]) yy[2]<-yy[3]<-yy[1]
+		polygon(x=xx,y=yy,col=col[cw$tip.clade[[i]]$id],border=col[cw$tip.clade[[i]]$id],lwd=lwd)
+		sep<-tmp
+	}
+#	for(i in 1:length(cw$tip.clade)) 
+#		text(X[which(cw$edge[,2]==i),2],y[i],cw$tip.clade[[i]]$label,pos=4,
+#			offset=0.1)
+	PP<-list(type="phylogram",use.edge.length=TRUE,node.pos=1,
+		show.tip.label=TRUE,show.node.label=FALSE,
+		font=1,cex=1,adj=0,srt=0,no.margin=FALSE,label.offset=0.1,
+		x.lim=par()$usr[1:2],y.lim=par()$usr[3:4],
+		direction="rightwards",tip.color="black",Ntip=Ntip(cw),Nnode=cw$Nnode,
+		edge=cw$edge,xx=sapply(1:(Ntip(cw)+cw$Nnode),
+		function(x,y,z) y[match(x,z)],y=X,z=cw$edge),yy=y)
+	assign("last_plot.phylo",PP,envir=.PlotPhyloEnv)
+}
+```
+
+
+```{r}
+
+
+```
+
+## get info about mapping individual sequences to the collapsed unique sequences
+```{r}
+fatips=fread('grep ">" ~/Documents/berdeja_dog1/phylogeny/pruned_e1_aln.haplonames.fa', header=F)
+fatips$V1=gsub(pattern = ">", replacement = '', fatips$V1)
+
+fainds=fread('grep ">" ~/Documents/berdeja_dog1/phylogeny/pruned_e1_aln.fa', header=F, sep='\t')
+fainds$V1=gsub(pattern = ">", replacement = '', fainds$V1)
+fainds$count=str_count(fainds$V1, ',')
+fatips$count=fainds$count
+
+```
+
+## read in the tree
+```{r}
+single=read.beast('~/Documents/berdeja_dog1/phylogeny/pruned_e1_aln.tre')
+stree=single
+```
+
+
+## convert to backbonePhylo and plot
+```{r}
+xtra2=as.phylo(stree)
+n<-length(xtra2$tip.label)
+ee<-setNames(xtra2$edge.length[sapply(1:n,function(x,y)   which(y==x),y=xtra2$edge[,2])],xtra2$tip.label)
+##trans needs: tip.label clade.label  N     depth
+trans=data.frame(tip.label=xtra2$tip.label, clade.label=hs$hap, 
+                 N=fatips$count*10, 
+                depth=ee/3)
+
+rownames(trans)<-NULL
+tt<-phylo.toBackbone(drop.tip(xtra2, c('ESCY_8', 'ESCY_62')),trans)
+plot.backbonePhylo_color(tt, vscale=0.1, fixed.height=F, col=hapcolors, lwd=1.5)
+
+```
+
+
+## get mrcas for each clade
+```{r}
+	dsyMRCA<-findMRCA(tt, which(sapply(tt$tip.clade, function(y) y$label)=='D-SY'))
+    dryMRCA<-findMRCA(tt, which(sapply(tt$tip.clade, function(y) y$label) %in% c('DR-Y', 'D-RY')))
+    efsyMRCA<-findMRCA(tt, which(sapply(tt$tip.clade, function(y) y$label) %in% c('EFSY')))
+    ecsyMRCA<-findMRCA(tt, which(sapply(tt$tip.clade, function(y) y$label) %in% c('ECSY'))[-2])
+    alldMRCA<-findMRCA(tt, which(sapply(tt$tip.clade, function(y) y$label) %in% c('D-RY', 'DR-Y', 'D-SY')))
+```
+
+
+## to combine the two, use a function and cowplot
+```{r}
+plot.backbonePhylo_color(tt, vscale=0.1, fixed.height=F, col=hapcolors, lwd=1.5)
+nodelabels('', node=dsyMRCA, col=hapcolors['D-SY'], bg = hapcolors['D-SY'], frame='circle', cex=0.5)
+nodelabels('', node=dryMRCA, col=hapcolors['D-RY'], bg = hapcolors['D-RY'], frame='circle', cex=0.5)
+nodelabels('', node=efsyMRCA, col=hapcolors['EFSY'], bg = hapcolors['EFSY'], frame='circle', cex=0.5)
+nodelabels('', node=ecsyMRCA, col=hapcolors['ECSY'], bg = hapcolors['ECSY'], frame='circle', cex=0.5)
+nodelabels('', node=alldMRCA, col=hapcolors['allD'], bg = hapcolors['allD'], frame='circle', cex=0.5)
+nodelabels('', node=73, col=hapcolors['allE'], bg = hapcolors['allE'], frame='circle', cex=0.5)
+
+
+treeplot=recordPlot()
+
+## extract legend
+legend=get_legend(temperature.alle + theme(legend.position="bottom", legend.justification="center" , legend.text=element_text(size=8), axis.title=element_text(size=9))+ guides(colour = guide_legend(nrow = 2)) + labs(color=''))
+
+plot_grid(treeplot, temperature.alle + theme(legend.position="none", axis.text=element_text(size=8), axis.title=element_text(size=9)), legend, labels = c('A', 'B', ''), 
+          scale = c(0.9, 1,1), ncol=1, rel_heights=c(0.8,0.5,0.1))
+
+```
+
+```{r}
+pdf('~/Downloads/dog1_tree_figure_july8.pdf',width = 3.4,7) ## pnas 8.7 cm for width of column, suggests starting with 9 inches for max height (b/c need figure legend)
+plot_grid(treeplot, temperature.alle + theme(legend.position="none", axis.text=element_text(size=8), axis.title=element_text(size=9)), legend, labels = c('A', 'B', ''), 
+          scale = c(0.9, 1,1), ncol=1, rel_heights=c(0.8,0.5,0.1))
+dev.off()
+```
+
+## todo!
+## put node points on tree
+## estimate ages from tree
+## paint branches back in time.
+##################### reduce size of points so that you see the CI in temperature plot.
