@@ -1,6 +1,8 @@
 ---
 title: "Population Genetic and Phylogenetic History of DOG1"
-output: html_notebook
+output:
+  html_document: default
+  html_notebook: default
 ---
 
 
@@ -325,6 +327,14 @@ plot.backbonePhylo_color<-function(x,...){
 
 ## this is a phytools function I modified to plot branches in color
 ```{r, include=FALSE}
+
+## scale N
+scaleN<-function(x,k){
+for(i in 1:length(x$tip.clade)) if(x$tip.clade[[i]]$N>1)
+x$tip.clade[[i]]$N<-x$tip.clade[[i]]$N*k
+x
+}
+
 ## plot backbone phylogeny with triangles
 plot.backbonePhylo_color<-function(x,...){
 	if(!inherits(x,"backbonePhylo")) 
@@ -482,6 +492,8 @@ fatips$count=fainds$count
 ```{r}
 single=read.beast('~/Documents/berdeja_dog1/phylogeny/pruned_e1_aln.tre')
 stree=single
+hs=data.frame(V1=single@phylo$tip.label, hap=str_split_fixed(single@phylo$tip.label, '_', 2)[,1])
+
 ```
 
 
@@ -540,8 +552,3 @@ plot_grid(treeplot, temperature.alle + theme(legend.position="none", axis.text=e
 dev.off()
 ```
 
-## todo!
-## put node points on tree
-## estimate ages from tree
-## paint branches back in time.
-##################### reduce size of points so that you see the CI in temperature plot.
