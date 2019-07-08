@@ -1,4 +1,27 @@
+### Map reads to DOG1 mRNA
 
+- `map_to_phrap.array.sh` 
+  - downloads SRA and converts to fastq files based on SLURM array ID from `sra_1135.tosample.txt`
+  - maps to `dog1_mRNA.fa` and keeps only mapped reads and their pairs
+  - assembles these reads using phrap
+
+## concatenate all DOG1 assemblies
+
+`cat all_dog1_assemblies.e1.may21.fa assembled_out_africa/*.contigs > all_dog1_1001_and_africa.fa`
+
+## align all with MAFFT, arrange relative to exon 1 sequence
+
+`srun -p bigmemh --mem=16000 --time=1-:00:00 mafft --adjustdirection --localpair --maxiterate 1000 --add all_dog1_assemblies.may21.fa --reorder dog1_e1.fa > all_dog1_assemblies.e1may21.aln.fa`
+
+
+## prepare for tree building
+
+manually remove unaligned seqs (bottom ones) in aliview, those with missing data across exon 1
+
+also remember to remove empty seqs!
+
+## remove duplicate sequences (where are these introduced?)
+`awk '/^>/{f=!d[$1];d[$1]=1}f' all_dog1_1001_and_africa.aln.trimmed.fa > all_dog1_1001_and_africa.aln.trimmed.uniq.fa`
 
 ### Assign ecotype IDs to alignment
 
