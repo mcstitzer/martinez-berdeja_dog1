@@ -1,4 +1,4 @@
-## Recreate Figure 3
+## Recreate Figure 4
 
 - `pleistocene_temps.Rmd` contains the code for the figure
 - `pleistocene_temps.md` shows the executed code and figures
