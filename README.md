@@ -1,5 +1,5 @@
 # martinez-berdeja_dog1
-Scripts to reconstruct DOG1 haplotypes and understand their evolution for Martinez-Berdeja et al., 2019
+Scripts to reconstruct DOG1 haplotypes and understand their evolution for [Martinez-Berdeja et al., 2019](https://www.pnas.org/content/early/2020/01/17/1912451117)
 
 - `figure4` contains scripts to reconstruct Figure 4, with the gene tree of DOG1 and pairwise divergence of haplotype groups plotted on a temperature record of the Pleistocene.
 
